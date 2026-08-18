@@ -1,0 +1,41 @@
+# ---- Session/planning docs (not part of the actual project) ----
+roadmap.md
+progress-log.md
+learning.md
+
+# ---- Maven ----
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# ---- Compiled class files ----
+*.class
+
+# ---- IDE - VS Code ----
+.vscode/
+*.code-workspace
+
+# ---- IDE - IntelliJ (in case you switch later) ----
+.idea/
+*.iml
+*.iws
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Logs ----
+*.log
+
+# ---- Environment / secrets (relevant once Phase 12 needs API keys) ----
+.env
+*.properties.local
+application-local.properties
