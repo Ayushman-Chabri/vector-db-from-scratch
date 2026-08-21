@@ -164,4 +164,48 @@ class VectorDbServerTest {
         assertEquals(200, response.statusCode());
         assertEquals("[]", response.body());
     }
+
+    @Test
+    void deleteRejectsNonNumericId() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/delete/abc"))
+                .DELETE()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(400, response.statusCode());
+        assertTrue(response.body().contains("error"));
+    }
+
+    @Test
+    void docDeleteReturnsFalseForUnknownId() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/doc/delete/999"))
+                .DELETE()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"ok\":false"));
+    }
+
+    @Test
+    void compareRejectsEmptyQuestion() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/compare"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"providers\":[]}"))
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(400, response.statusCode());
+        assertTrue(response.body().contains("error"));
+    }
+
+    @Test
+    void rootServesFrontendHtml() throws Exception {
+        HttpResponse<String> response = get("/");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("<!DOCTYPE html>"));
+    }
 }

@@ -80,4 +80,18 @@ class JsonRoundTripTest {
         List<Float> parsed = JsonParser.parseVector(inner);
         assertEquals(original, parsed);
     }
+
+    @Test
+    void extractObjectArrayParsesMultipleProviderObjects() {
+        String body = "{\"providers\":["
+                + "{\"name\":\"Groq\",\"endpoint\":\"https://x/v1\",\"apiKey\":\"k1\",\"model\":\"m1\"},"
+                + "{\"name\":\"Together\",\"endpoint\":\"https://y/v1\",\"apiKey\":\"k2\",\"model\":\"m2\"}"
+                + "]}";
+
+        List<String> objs = JsonParser.extractObjectArray(body, "providers");
+
+        assertEquals(2, objs.size());
+        assertEquals("Groq", JsonParser.extractString(objs.get(0), "name"));
+        assertEquals("m2", JsonParser.extractString(objs.get(1), "model"));
+    }
 }

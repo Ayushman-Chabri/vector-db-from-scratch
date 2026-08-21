@@ -37,6 +37,8 @@ public class VectorDbServer {
         server.createContext("/doc/list", new DocListHandler(docDB));
         server.createContext("/doc/delete", new DocDeleteHandler(docDB));
         server.createContext("/doc/ask", new DocAskHandler(docDB, ollama));
+        server.createContext("/compare", new CompareHandler(docDB, ollama));
+        server.createContext("/", new StaticFileHandler());
 
         server.setExecutor(Executors.newFixedThreadPool(4));
         server.start();

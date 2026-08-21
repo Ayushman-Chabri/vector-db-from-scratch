@@ -96,6 +96,61 @@ public final class JsonParser {
         return parseVector(body.substring(p + 1, e));
     }
 
+    // Extracts a JSON array of objects, e.g. "providers":[{"a":1},{"b":2}],
+    // returning each object as its own raw JSON substring (so callers can
+    // run extractString/extractInt on each one individually). Handles
+    // nested braces and quoted strings (including escaped quotes) so a
+    // brace inside a string value doesn't throw off the bracket counting.
+    public static List<String> extractObjectArray(String body, String key) {
+        List<String> result = new ArrayList<>();
+        int p = body.indexOf('"' + key + '"');
+        if (p == -1)
+            return result;
+
+        p = body.indexOf('[', p);
+        if (p == -1)
+            return result;
+
+        int i = p + 1;
+        while (i < body.length()) {
+            while (i < body.length() && (body.charAt(i) == ',' || Character.isWhitespace(body.charAt(i))))
+                i++;
+            if (i >= body.length() || body.charAt(i) == ']')
+                break;
+            if (body.charAt(i) != '{')
+                break;
+
+            int start = i;
+            int depth = 0;
+            boolean inString = false;
+            while (i < body.length()) {
+                char c = body.charAt(i);
+                if (inString) {
+                    if (c == '\\') {
+                        i++;
+                    } else if (c == '"') {
+                        inString = false;
+                    }
+                } else {
+                    if (c == '"') {
+                        inString = true;
+                    } else if (c == '{') {
+                        depth++;
+                    } else if (c == '}') {
+                        depth--;
+                        if (depth == 0) {
+                            i++;
+                            break;
+                        }
+                    }
+                }
+                i++;
+            }
+            result.add(body.substring(start, i));
+        }
+        return result;
+    }
+
     public record ParsedInsertBody(String label, List<Float> embedding) {
     }
 

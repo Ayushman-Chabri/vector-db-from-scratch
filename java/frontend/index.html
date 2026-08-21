@@ -327,6 +327,63 @@
     padding: 8px 0;
   }
 
+  /* ---------- compare tab ---------- */
+
+  .provider-row {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .provider-row .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .provider-row .field { margin-bottom: 0; }
+  .provider-row .remove-row {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .compare-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .compare-card .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .compare-card .model-name {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--cyan);
+  }
+  .compare-card.local .model-name { color: var(--green); }
+  .compare-card .latency {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-dim);
+  }
+  .compare-card .answer {
+    font-size: 13.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .compare-card.skipped .answer,
+  .compare-card.errored .answer {
+    color: var(--text-dim);
+    font-style: italic;
+  }
+
   /* ---------- graph sidebar ---------- */
 
   .graph-legend {
@@ -364,6 +421,7 @@
     <button class="tab-btn active" data-tab="search"><span class="idx">[01]</span>SEARCH</button>
     <button class="tab-btn" data-tab="documents"><span class="idx">[02]</span>DOCUMENTS</button>
     <button class="tab-btn" data-tab="ask"><span class="idx">[03]</span>ASK AI</button>
+    <button class="tab-btn" data-tab="compare"><span class="idx">[04]</span>COMPARE</button>
   </nav>
 
   <div class="grid">
@@ -455,6 +513,37 @@
           <button class="btn" id="askBtn">Ask AI</button>
         </div>
       </section>
+
+      <!-- COMPARE -->
+      <section class="tabpanel" id="tab-compare">
+        <div class="panel">
+          <h2>Providers</h2>
+          <p class="hint" style="margin-bottom:14px;">Add any provider that speaks the OpenAI-compatible chat completions API — OpenAI itself, Groq, Together, Mistral, DeepSeek, Fireworks, OpenRouter, etc. Keys are kept only in this browser tab and sent straight to that provider with your request — never stored or logged server-side.</p>
+          <div id="providerList"></div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">
+            <button class="btn secondary" id="addProviderBtn">+ Blank Provider</button>
+            <button class="btn secondary" data-preset="openai">+ OpenAI</button>
+            <button class="btn secondary" data-preset="groq">+ Groq</button>
+            <button class="btn secondary" data-preset="openrouter">+ OpenRouter</button>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:16px;">
+          <h2>Run Comparison</h2>
+          <div class="row">
+            <div class="field" style="flex:3;">
+              <label for="compareQuestion">Question</label>
+              <input type="text" id="compareQuestion" placeholder="What is dynamic programming?">
+            </div>
+            <div class="field" style="flex:1;">
+              <label for="compareK">Contexts (local RAG)</label>
+              <input type="number" id="compareK" value="3" min="1" max="10">
+            </div>
+          </div>
+          <button class="btn" id="compareBtn">Run Comparison</button>
+          <div id="compareResults" style="margin-top:16px;"></div>
+        </div>
+      </section>
     </div>
 
     <!-- HNSW GRAPH SIDEBAR -->
@@ -468,7 +557,7 @@
 </div>
 
 <script>
-const API = 'http://localhost:8080';
+const API = 'http://127.0.0.1:8080';
 
 // ---------- tabs ----------
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -734,6 +823,128 @@ async function refreshGraph() {
 }
 refreshGraph();
 setInterval(refreshGraph, 8000);
+
+// ---------- compare tab ----------
+let providers = [];
+let providerSeq = 0;
+
+function addProviderRow(preset) {
+  const id = providerSeq++;
+  providers.push({ id, name: preset?.name || '', endpoint: preset?.endpoint || '', apiKey: '', model: preset?.model || '' });
+  renderProviders();
+}
+
+function renderProviders() {
+  const el = document.getElementById('providerList');
+  if (providers.length === 0) {
+    el.innerHTML = '<p class="empty">No providers yet — add one below (or try a preset).</p>';
+    return;
+  }
+  el.innerHTML = providers.map(p => `
+    <div class="provider-row" data-id="${p.id}">
+      <div class="grid2">
+        <div class="field">
+          <label>Name</label>
+          <input type="text" data-field="name" value="${escapeAttr(p.name)}" placeholder="e.g. Groq">
+        </div>
+        <div class="field">
+          <label>Model</label>
+          <input type="text" data-field="model" value="${escapeAttr(p.model)}" placeholder="e.g. llama-3.3-70b-versatile">
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>Endpoint (chat completions URL)</label>
+          <input type="text" data-field="endpoint" value="${escapeAttr(p.endpoint)}" placeholder="https://api.groq.com/openai/v1/chat/completions">
+        </div>
+        <div class="field">
+          <label>API Key</label>
+          <input type="password" data-field="apiKey" value="${escapeAttr(p.apiKey)}" placeholder="pasted here only, never stored">
+        </div>
+      </div>
+      <div class="remove-row">
+        <button class="btn danger" data-remove="${p.id}">Remove</button>
+      </div>
+    </div>
+  `).join('');
+
+  el.querySelectorAll('.provider-row').forEach(row => {
+    const id = parseInt(row.dataset.id);
+    row.querySelectorAll('[data-field]').forEach(input => {
+      input.addEventListener('input', () => {
+        const p = providers.find(x => x.id === id);
+        if (p) p[input.dataset.field] = input.value;
+      });
+    });
+  });
+  el.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      providers = providers.filter(p => p.id !== parseInt(btn.dataset.remove));
+      renderProviders();
+    });
+  });
+}
+
+document.getElementById('addProviderBtn').addEventListener('click', () => addProviderRow());
+
+const PRESETS = {
+  openai: { name: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-5.6-luna' },
+  groq: { name: 'Groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile' },
+  openrouter: { name: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1/chat/completions', model: 'anthropic/claude-haiku-4.5' },
+};
+document.querySelectorAll('[data-preset]').forEach(btn => {
+  btn.addEventListener('click', () => addProviderRow(PRESETS[btn.dataset.preset]));
+});
+
+renderProviders();
+
+document.getElementById('compareBtn').addEventListener('click', async () => {
+  const question = document.getElementById('compareQuestion').value.trim();
+  const k = parseInt(document.getElementById('compareK').value);
+  const resultsEl = document.getElementById('compareResults');
+  const btn = document.getElementById('compareBtn');
+  if (!question) { resultsEl.innerHTML = '<p class="empty">Type a question first.</p>'; return; }
+
+  btn.disabled = true;
+  resultsEl.innerHTML = '<p class="empty">running local RAG + all providers…</p>';
+
+  try {
+    const res = await fetch(API + '/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question, k,
+        providers: providers
+          .filter(p => p.endpoint && p.apiKey && p.model)
+          .map(p => ({ name: p.name || p.endpoint, endpoint: p.endpoint, apiKey: p.apiKey, model: p.model }))
+      })
+    });
+    const data = await res.json();
+    if (data.error) { resultsEl.innerHTML = `<p class="empty">${escapeHtml(data.error)}</p>`; btn.disabled = false; return; }
+
+    resultsEl.innerHTML = data.results.map(r => {
+      const isLocal = r.model.startsWith('Local RAG');
+      const isError = (r.answer || '').startsWith('ERROR');
+      const cls = [isLocal ? 'local' : '', r.skipped ? 'skipped' : '', isError ? 'errored' : ''].filter(Boolean).join(' ');
+      return `
+        <div class="compare-card ${cls}">
+          <div class="head">
+            <span class="model-name">${escapeHtml(r.model)}</span>
+            <span class="latency">${r.skipped ? '' : r.latencyMs + 'ms'}</span>
+          </div>
+          <div class="answer">${escapeHtml(r.answer)}</div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    resultsEl.innerHTML = '<p class="empty">Could not reach the server.</p>';
+  }
+  btn.disabled = false;
+});
+
+function escapeAttr(s) {
+  return (s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
 
 function escapeHtml(s) {
   const d = document.createElement('div');
