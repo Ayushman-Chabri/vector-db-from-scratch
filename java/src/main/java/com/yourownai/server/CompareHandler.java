@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.yourownai.db.DocSearchResult;
 import com.yourownai.db.DocumentDB;
+import com.yourownai.distance.Distance;
 import com.yourownai.json.JsonParser;
 import com.yourownai.json.JsonWriter;
 import com.yourownai.llm.GenericLlmClient;
@@ -40,16 +41,27 @@ public class CompareHandler implements HttpHandler {
         String body = RequestBody.readAsString(exchange);
         String question = JsonParser.extractString(body, "question");
         int k = JsonParser.extractInt(body, "k", 3);
+        List<String> facts = JsonParser.extractStringArray(body, "facts");
 
         if (question.isEmpty()) {
             HttpJson.send(exchange, 400, "{\"error\":\"need question\"}");
             return;
         }
 
+        // Embed each reference fact once, up front — reused for scoring
+        // every provider's answer, rather than re-embedding per provider.
+        List<List<Float>> factEmbeddings = new ArrayList<>();
+        for (String fact : facts) {
+            List<Float> emb = ollama.embed(fact);
+            if (!emb.isEmpty()) {
+                factEmbeddings.add(emb);
+            }
+        }
+
         List<String> providerJsons = JsonParser.extractObjectArray(body, "providers");
 
         List<CompareResult> results = new ArrayList<>();
-        results.add(runLocalRag(question, k));
+        results.add(runLocalRag(question, k, factEmbeddings));
 
         for (String pJson : providerJsons) {
             String name = JsonParser.extractString(pJson, "name");
@@ -62,7 +74,9 @@ public class CompareHandler implements HttpHandler {
             long start = System.currentTimeMillis();
             String answer = GenericLlmClient.ask(endpoint, apiKey, model, question);
             long latency = System.currentTimeMillis() - start;
-            results.add(new CompareResult(name, answer, latency, false));
+
+            double score = scoreAnswer(answer, factEmbeddings);
+            results.add(new CompareResult(name, answer, latency, false, score));
         }
 
         StringBuilder sb = new StringBuilder("{\"results\":[");
@@ -74,6 +88,7 @@ public class CompareHandler implements HttpHandler {
                     .append(",\"answer\":").append(JsonWriter.jsonString(r.answer()))
                     .append(",\"latencyMs\":").append(r.latencyMs())
                     .append(",\"skipped\":").append(r.skipped())
+                    .append(",\"accuracyScore\":").append(r.accuracyScore())
                     .append('}');
         }
         sb.append("]}");
@@ -81,14 +96,14 @@ public class CompareHandler implements HttpHandler {
         HttpJson.send(exchange, 200, sb.toString());
     }
 
-    private CompareResult runLocalRag(String question, int k) {
+    private CompareResult runLocalRag(String question, int k, List<List<Float>> factEmbeddings) {
         long start = System.currentTimeMillis();
 
         List<Float> qEmb = ollama.embed(question);
         if (qEmb.isEmpty()) {
             return new CompareResult("Local RAG (HNSW + llama3.2)",
                     "ERROR: Ollama unavailable or no embedding returned",
-                    System.currentTimeMillis() - start, false);
+                    System.currentTimeMillis() - start, false, -1);
         }
 
         List<DocSearchResult> hits = docDB.search(qEmb, k);
@@ -102,6 +117,31 @@ public class CompareHandler implements HttpHandler {
         String answer = ollama.generate(prompt);
 
         long latency = System.currentTimeMillis() - start;
-        return new CompareResult("Local RAG (HNSW + llama3.2)", answer, latency, false);
+        double score = scoreAnswer(answer, factEmbeddings);
+        return new CompareResult("Local RAG (HNSW + llama3.2)", answer, latency, false, score);
+    }
+
+    // Averages cosine similarity between the answer's embedding and each
+    // reference fact's embedding. Distance.cosine returns a DISTANCE
+    // (1 - similarity, per the Phase 1 convention), so similarity is
+    // (1 - that distance). Returns -1 if no facts were supplied, or if
+    // the answer looks like an error (so a failed call doesn't get scored
+    // as if it were a real, ungrounded answer).
+    private double scoreAnswer(String answer, List<List<Float>> factEmbeddings) {
+        if (factEmbeddings.isEmpty() || answer == null || answer.startsWith("ERROR")) {
+            return -1;
+        }
+
+        List<Float> answerEmb = ollama.embed(answer);
+        if (answerEmb.isEmpty()) {
+            return -1;
+        }
+
+        double total = 0;
+        for (List<Float> factEmb : factEmbeddings) {
+            double distance = Distance.cosine(answerEmb, factEmb);
+            total += (1.0 - distance);
+        }
+        return total / factEmbeddings.size();
     }
 }

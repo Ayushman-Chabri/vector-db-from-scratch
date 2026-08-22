@@ -525,6 +525,7 @@
             <button class="btn secondary" data-preset="openai">+ OpenAI</button>
             <button class="btn secondary" data-preset="groq">+ Groq</button>
             <button class="btn secondary" data-preset="openrouter">+ OpenRouter</button>
+            <button class="btn secondary" data-preset="nvidia">+ NVIDIA Nemotron</button>
           </div>
         </div>
 
@@ -539,6 +540,10 @@
               <label for="compareK">Contexts (local RAG)</label>
               <input type="number" id="compareK" value="3" min="1" max="10">
             </div>
+          </div>
+          <div class="field">
+            <label for="compareFacts">Reference facts (one per line) — used to score groundedness. Leave blank to skip scoring.</label>
+            <textarea id="compareFacts" rows="3" placeholder="HNSW builds a multilayer graph&#10;Higher layers have fewer nodes&#10;Search starts at the top layer and descends"></textarea>
           </div>
           <button class="btn" id="compareBtn">Run Comparison</button>
           <div id="compareResults" style="margin-top:16px;"></div>
@@ -891,6 +896,7 @@ const PRESETS = {
   openai: { name: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-5.6-luna' },
   groq: { name: 'Groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile' },
   openrouter: { name: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1/chat/completions', model: 'anthropic/claude-haiku-4.5' },
+  nvidia: { name: 'NVIDIA Nemotron', endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions', model: 'nvidia/nemotron-3-ultra-550b-a55b' },
 };
 document.querySelectorAll('[data-preset]').forEach(btn => {
   btn.addEventListener('click', () => addProviderRow(PRESETS[btn.dataset.preset]));
@@ -901,6 +907,8 @@ renderProviders();
 document.getElementById('compareBtn').addEventListener('click', async () => {
   const question = document.getElementById('compareQuestion').value.trim();
   const k = parseInt(document.getElementById('compareK').value);
+  const factsRaw = document.getElementById('compareFacts').value;
+  const facts = factsRaw.split('\n').map(f => f.trim()).filter(Boolean);
   const resultsEl = document.getElementById('compareResults');
   const btn = document.getElementById('compareBtn');
   if (!question) { resultsEl.innerHTML = '<p class="empty">Type a question first.</p>'; return; }
@@ -913,7 +921,7 @@ document.getElementById('compareBtn').addEventListener('click', async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        question, k,
+        question, k, facts,
         providers: providers
           .filter(p => p.endpoint && p.apiKey && p.model)
           .map(p => ({ name: p.name || p.endpoint, endpoint: p.endpoint, apiKey: p.apiKey, model: p.model }))
@@ -926,11 +934,17 @@ document.getElementById('compareBtn').addEventListener('click', async () => {
       const isLocal = r.model.startsWith('Local RAG');
       const isError = (r.answer || '').startsWith('ERROR');
       const cls = [isLocal ? 'local' : '', r.skipped ? 'skipped' : '', isError ? 'errored' : ''].filter(Boolean).join(' ');
+      const scoreLabel = r.accuracyScore < 0
+        ? ''
+        : `<span class="latency">${Math.round(r.accuracyScore * 100)}% grounded</span>`;
       return `
         <div class="compare-card ${cls}">
           <div class="head">
             <span class="model-name">${escapeHtml(r.model)}</span>
-            <span class="latency">${r.skipped ? '' : r.latencyMs + 'ms'}</span>
+            <span style="display:flex; gap:12px;">
+              <span class="latency">${r.skipped ? '' : r.latencyMs + 'ms'}</span>
+              ${scoreLabel}
+            </span>
           </div>
           <div class="answer">${escapeHtml(r.answer)}</div>
         </div>

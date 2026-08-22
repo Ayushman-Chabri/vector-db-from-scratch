@@ -94,4 +94,20 @@ class JsonRoundTripTest {
         assertEquals("Groq", JsonParser.extractString(objs.get(0), "name"));
         assertEquals("m2", JsonParser.extractString(objs.get(1), "model"));
     }
+
+    @Test
+    void extractStringArrayParsesMultipleFacts() {
+        String body = "{\"facts\":[\"HNSW is a graph algorithm\",\"It has multiple layers\"]}";
+        List<String> facts = JsonParser.extractStringArray(body, "facts");
+
+        assertEquals(2, facts.size());
+        assertEquals("HNSW is a graph algorithm", facts.get(0));
+        assertEquals("It has multiple layers", facts.get(1));
+    }
+
+    @Test
+    void extractStringArrayReturnsEmptyForMissingKey() {
+        String body = "{\"other\":1}";
+        assertTrue(JsonParser.extractStringArray(body, "facts").isEmpty());
+    }
 }

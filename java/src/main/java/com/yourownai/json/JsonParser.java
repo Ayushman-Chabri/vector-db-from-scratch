@@ -161,4 +161,43 @@ public final class JsonParser {
         List<Float> embedding = extractFloatArray(body, "embedding");
         return new ParsedInsertBody(label, embedding);
     }
+        // Extracts a JSON array of plain strings, e.g. "facts":["a","b c"].
+    // Reuses the same escape handling as extractString, applied per element.
+    public static List<String> extractStringArray(String body, String key) {
+        List<String> result = new ArrayList<>();
+        int p = body.indexOf('"' + key + '"');
+        if (p == -1) return result;
+
+        p = body.indexOf('[', p);
+        if (p == -1) return result;
+
+        int i = p + 1;
+        while (i < body.length()) {
+            while (i < body.length() && (body.charAt(i) == ',' || Character.isWhitespace(body.charAt(i)))) i++;
+            if (i >= body.length() || body.charAt(i) == ']') break;
+            if (body.charAt(i) != '"') break;
+            i++;
+
+            StringBuilder sb = new StringBuilder();
+            while (i < body.length() && body.charAt(i) != '"') {
+                char c = body.charAt(i);
+                if (c == '\\' && i + 1 < body.length()) {
+                    i++;
+                    char esc = body.charAt(i);
+                    switch (esc) {
+                        case '"' -> sb.append('"');
+                        case '\\' -> sb.append('\\');
+                        case 'n' -> sb.append('\n');
+                        default -> sb.append(esc);
+                    }
+                } else {
+                    sb.append(c);
+                }
+                i++;
+            }
+            i++; // skip closing quote
+            result.add(sb.toString());
+        }
+        return result;
+    }
 }
